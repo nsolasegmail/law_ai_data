@@ -1,0 +1,580 @@
+version: 2
+
+models:
+  - name: daily_user_engagement
+    description: "Daily user engagement metrics aggregated monthly with daily incremental updates for current month"
+    config:
+      tags: ["incremental", "daily", "monthly"]
+    columns:
+      - name: user_id
+        description: "Unique identifier for the user"
+        tests:
+          - not_null
+          - unique:
+              where: "month = date_trunc('month', current_date)"
+      - name: firm_id
+        description: "Unique identifier for the firm"
+        tests:
+          - not_null
+      - name: month
+        description: "Month of the engagement metrics"
+        tests:
+          - not_null
+      - name: user_role
+        description: "User's role/title in the firm at the time of events"
+      - name: user_created_date
+        description: "Date when the user was created"
+      - name: months_since_creation
+        description: "Number of months since user creation"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: total_queries
+        description: "Total queries submitted by the user in the month"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: unique_event_types
+        description: "Number of unique event types used by the user"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 1 and <= 3"
+      - name: total_documents_processed
+        description: "Total documents processed by the user"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: avg_feedback_score
+        description: "Average feedback score for the user's queries"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 1 and <= 5"
+      - name: active_days
+        description: "Number of unique days the user was active"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 31"
+      - name: first_activity_date
+        description: "First activity date in the month"
+      - name: last_activity_date
+        description: "Last activity date in the month"
+      - name: assistant_queries
+        description: "Number of ASSISTANT event type queries"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: vault_queries
+        description: "Number of VAULT event type queries"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: workflow_queries
+        description: "Number of WORKFLOW event type queries"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: avg_documents_per_query
+        description: "Average documents processed per query"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: engagement_level
+        description: "User engagement classification based on activity frequency"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['High Frequency User', 'Mid Frequency User', 'Low Frequency User', 'Occasional User', 'Inactive User']
+      - name: usage_pattern
+        description: "User's preferred event type pattern"
+        tests:
+          - not_null
+      - name: quality_level
+        description: "User's quality level based on feedback scores"
+        tests:
+          - not_null
+      - name: active_days_weight
+        description: "Power user score component: active days weight (0-100)"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: document_volume_weight
+        description: "Power user score component: document volume weight (0-100)"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: feature_breadth_weight
+        description: "Power user score component: feature breadth weight (0-100)"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: power_user_score
+        description: "Power user score (0-100) combining activity, volume, and feature usage"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: power_user_tier
+        description: "Power user classification tier based on overall score"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Power User', 'High Value User', 'Medium Value User', 'Low Value User', 'Inactive User']
+      - name: tenure_band
+        description: "User tenure band based on months since creation"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['0-1 months', '1-3 months', '3-6 months', '6-12 months', '12+ months']
+      - name: _loaded_at
+        description: "Timestamp when the record was loaded"
+        tests:
+          - not_null
+      - name: _run_id
+        description: "Unique identifier for the dbt run"
+        tests:
+          - not_null
+      - name: _etl_strategy
+        description: "ETL strategy used: 'daily_incremental' for current month updates"
+        tests:
+          - not_null
+      - name: _data_status
+        description: "Data status: 'current_month' or 'historical_month'"
+        tests:
+          - not_null
+
+  - name: dim_user
+    description: "Dimension table for users with SCD Type 2 tracking for point-in-time accuracy"
+    columns:
+      - name: user_id
+        description: "Unique identifier for the user"
+        tests:
+          - not_null
+      - name: user_role
+        description: "User's role/title in the firm"
+      - name: user_created_date
+        description: "Date when the user was created"
+      - name: effective_start_date
+        description: "Start date for which the user's attributes are effective"
+        tests:
+          - not_null
+      - name: effective_end_date
+        description: "End date for which the user's attributes are effective"
+        tests:
+          - not_null
+      - name: is_current
+        description: "Flag indicating if this is the current active record for the user"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+      - name: user_dim_key
+        description: "Surrogate key for the dimension record"
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_firms
+    description: "Dimension table for firms with SCD Type 2 tracking for point-in-time accuracy"
+    columns:
+      - name: firm_id
+        description: "Unique identifier for the firm"
+        tests:
+          - not_null
+      - name: firm_size
+        description: "Size of the firm"
+      - name: arr_in_thousands
+        description: "Annual Recurring Revenue (in thousands) for the firm"
+      - name: firm_created_date
+        description: "Date when the firm was created"
+      - name: effective_start_date
+        description: "Start date for which the firm's attributes are effective"
+        tests:
+          - not_null
+      - name: effective_end_date
+        description: "End date for which the firm's attributes are effective"
+        tests:
+          - not_null
+      - name: is_current
+        description: "Flag indicating if this is the current active record for the firm"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+      - name: firm_dim_key
+        description: "Surrogate key for the dimension record"
+        tests:
+          - not_null
+          - unique
+
+  - name: daily_firm_usage_summary
+    description: "Daily firm usage summary with point-in-time accurate firm attributes"
+    columns:
+      - name: firm_id
+        description: "Unique identifier for the firm"
+        tests:
+          - not_null
+      - name: date
+        description: "Date of the daily summary"
+        tests:
+          - not_null
+          - unique:
+              column_names: ["firm_id", "date"]
+      - name: firm_size
+        description: "Size of the firm"
+      - name: arr_in_thousands
+        description: "Annual Recurring Revenue (in thousands) for the firm"
+      - name: firm_created_date
+        description: "Date when the firm was created"
+      - name: days_since_firm_creation
+        description: "Number of days since firm creation"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: active_users
+        description: "Number of active users in the firm for the day"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: unique_users
+        description: "Number of unique users in the firm for the day"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: total_queries
+        description: "Total queries from the firm for the day"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: total_documents_processed
+        description: "Total documents processed by the firm for the day"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: avg_feedback_score
+        description: "Average feedback score for the firm's queries"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 1 and <= 5"
+      - name: assistant_queries
+        description: "Number of ASSISTANT event type queries"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: vault_queries
+        description: "Number of VAULT event type queries"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: workflow_queries
+        description: "Number of WORKFLOW event type queries"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: avg_documents_per_query
+        description: "Average documents processed per query"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: firm_health_status
+        description: "Overall health status of the firm"
+        tests:
+          - not_null
+      - name: firm_maturity_stage
+        description: "Maturity stage of the firm"
+        tests:
+          - not_null
+      - name: firm_size_category
+        description: "Category classification of firm size"
+        tests:
+          - not_null
+      - name: arr_tier
+        description: "ARR tier classification"
+        tests:
+          - not_null
+      - name: firm_usage_pattern
+        description: "Pattern of feature usage by the firm"
+        tests:
+          - not_null
+      - name: daily_adoption_rate
+        description: "Daily adoption rate within the firm"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: adoption_level
+        description: "Level of adoption within the firm"
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: "Timestamp when the record was loaded"
+        tests:
+          - not_null
+      - name: _run_id
+        description: "Unique identifier for the dbt run"
+        tests:
+          - not_null
+      - name: _etl_strategy
+        description: "ETL strategy used: 'daily_incremental'"
+
+  - name: harvey_analytics_dashboard
+    description: "Daily analytics dashboard providing key insights and KPIs for Harvey product analytics"
+    columns:
+      - name: date
+        description: "Date of the dashboard metrics"
+        tests:
+          - not_null
+          - unique
+      - name: total_events
+        description: "Total events processed on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: unique_users
+        description: "Number of unique users active on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: unique_firms
+        description: "Number of unique firms active on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: total_documents
+        description: "Total documents processed on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: overall_avg_feedback
+        description: "Overall average feedback score for the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 1 and <= 5"
+      - name: power_users
+        description: "Number of power users active on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: high_value_users
+        description: "Number of high value users active on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: medium_value_users
+        description: "Number of medium value users active on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: low_value_users
+        description: "Number of low value users active on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: inactive_users
+        description: "Number of inactive users on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: avg_power_score
+        description: "Average power user score for the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: avg_queries_per_user
+        description: "Average queries per user for the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: avg_active_days_per_user
+        description: "Average active days per user for the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: avg_user_feedback
+        description: "Average user feedback score for the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 1 and <= 5"
+      - name: active_firms
+        description: "Number of active firms on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: total_firm_queries
+        description: "Total firm queries on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: total_firm_documents
+        description: "Total firm documents processed on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: avg_firm_feedback
+        description: "Average firm feedback score for the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 1 and <= 5"
+      - name: avg_firm_adoption_rate
+        description: "Average firm adoption rate for the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: assistant_events
+        description: "Number of ASSISTANT events on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: vault_events
+        description: "Number of VAULT events on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: workflow_events
+        description: "Number of WORKFLOW events on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: high_satisfaction_events
+        description: "Number of high satisfaction events (score >= 4) on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: low_satisfaction_events
+        description: "Number of low satisfaction events (score <= 2) on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: assistant_percent
+        description: "Percentage of ASSISTANT events on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: vault_percent
+        description: "Percentage of VAULT events on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: workflow_percent
+        description: "Percentage of WORKFLOW events on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: high_satisfaction_rate
+        description: "Percentage of high satisfaction events on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: low_satisfaction_rate
+        description: "Percentage of low satisfaction events on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: events_per_user
+        description: "Average events per user on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: documents_per_user
+        description: "Average documents per user on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: avg_documents_per_event
+        description: "Average documents per event on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: new_users_cohort
+        description: "Number of new users (created this month) active on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: returning_users_cohort
+        description: "Number of returning users (created before this month) active on the date"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: power_user_retention
+        description: "Number of power users retained from previous month"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: user_progression
+        description: "Number of users who progressed to higher engagement levels"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: power_users_rate
+        description: "Percentage of power users out of total active users"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: high_value_users_rate
+        description: "Percentage of high value users out of total active users"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0 and <= 100"
+      - name: usage_volume_category
+        description: "Category classification of usage volume"
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: "Timestamp when the record was loaded"
+        tests:
+          - not_null
+      - name: _run_id
+        description: "Unique identifier for the dbt run"
+        tests:
+          - not_null
+
+# Generic tests using custom macros
+tests:
+  - name: test_engagement_levels_valid
+    description: "Validates that engagement levels are within expected values using custom macro"
+    columns:
+      - engagement_level
+    config:
+      severity: warn
+
+  - name: test_firm_health_valid
+    description: "Validates that firm health statuses are within expected values using custom macro"
+    columns:
+      - firm_health_status
+    config:
+      severity: warn
+
+  - name: test_feedback_score_range
+    description: "Validates that feedback scores are within 1-5 range using custom macro"
+    columns:
+      - avg_feedback_score
+    config:
+      severity: error
+
+  - name: test_percentage_range
+    description: "Validates that percentage values are within 0-100 range using custom macro"
+    columns:
+      - user_adoption_rate
+      - assistant_percent
+      - vault_percent
+      - workflow_percent
+      - high_satisfaction_rate
+      - low_satisfaction_rate
+    config:
+      severity: error
+
+  - name: test_non_negative
+    description: "Validates that numeric values are non-negative using custom macro"
+    columns:
+      - total_queries
+      - total_documents_processed
+      - active_days
+      - firm_size
+      - arr_in_thousands
+    config:
+      severity: error
+
+  - name: test_referential_integrity
+    description: "Validates referential integrity between models using custom macro"
+    columns:
+      - firm_id
+      - user_id
+    config:
+      severity: error
