@@ -17,7 +17,11 @@ with daily_firm_events as (
     e.user_id,
     e.event_type,
     e.num_docs,
-    e.feedback_score,
+    -- Handle invalid feedback scores by setting them to NULL
+    case 
+      when e.feedback_score >= 1 and e.feedback_score <= 5 then e.feedback_score
+      else null
+    end as feedback_score,
     e.created as event_date,
     date(e.created) as date,
     -- Point-in-time accurate firm attributes
@@ -32,13 +36,18 @@ with daily_firm_events as (
   left join {{ ref('dim_firms') }} df on e.firm_id = df.firm_id
     and e.created >= df.effective_start_date 
     and e.created <= df.effective_end_date
-  {% if is_incremental() %}
-    -- For incremental runs, process only new dates
-    where date(e.created) >= coalesce(
-      (select max(date) from {{ this }}), 
-      '1900-01-01'::date
-    )
-  {% endif %}
+  where 
+    -- Ignore records with NULL firm_id
+    e.firm_id is not null
+    -- Ignore records with future dates (created > execution date)
+    and e.created <= current_date
+    {% if is_incremental() %}
+      -- For incremental runs, process only new dates
+      and date(e.created) >= coalesce(
+        (select max(date) from {{ this }}), 
+        '1900-01-01'::date
+      )
+    {% endif %}
 ),
 
 daily_firm_metrics as (
