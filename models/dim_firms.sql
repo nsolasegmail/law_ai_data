@@ -2,35 +2,66 @@
   config(
     materialized='incremental',
     unique_key=['firm_dim_key'],
-    description='Dimension table for firms with SCD Type 2 tracking for point-in-time accuracy - updated daily'
+    description='Dimension table for firms with SCD Type 2 tracking for point-in-time accuracy - updated daily with deduplication'
   )
 }}
 
-with firm_changes as (
+with deduplicated_firms as (
   select 
     id as firm_id,
     firm_size,
     arr_in_thousands,
     created as firm_created_date,
-    -- Track changes in firm attributes
+    -- Use created date for deduplication since updated_at doesn't exist
+    created as last_updated,
+    -- Add row_number as fallback deduplication method
     row_number() over (
       partition by id 
-      order by created
+      order by created desc
+    ) as dedup_rank
+  from {{ ref('firms') }}
+  where 
+    -- Ignore records with future dates (created > execution date)
+    created <= current_date
+    {% if is_incremental() %}
+      -- For incremental runs, process only new or changed firms
+      and created >= coalesce(
+        (select max(effective_start_date) from {{ this }}), 
+        '1900-01-01'::date
+      )
+    {% endif %}
+),
+
+filtered_firms as (
+  select 
+    firm_id,
+    firm_size,
+    arr_in_thousands,
+    firm_created_date,
+    last_updated
+  from deduplicated_firms
+  where dedup_rank = 1  -- Take only the latest record for each firm
+),
+
+firm_changes as (
+  select 
+    firm_id,
+    firm_size,
+    arr_in_thousands,
+    firm_created_date,
+    last_updated,
+    -- Track changes in firm attributes
+    row_number() over (
+      partition by firm_id 
+      order by last_updated
     ) as change_number,
     -- Create effective dates
-    created as effective_start_date,
-    lead(created) over (
-      partition by id 
-      order by created
+    last_updated as effective_start_date,
+    lead(last_updated) over (
+      partition by firm_id 
+      order by last_updated
     ) as effective_end_date
-  from {{ ref('firms') }}
-  {% if is_incremental() %}
-    -- For incremental runs, process only new or changed firms
-    where created >= coalesce(
-      (select max(effective_start_date) from {{ this }}), 
-      '1900-01-01'::date
-    )
-  {% endif %}
+  from filtered_firms
 ),
 
 final_dim_firms as (
