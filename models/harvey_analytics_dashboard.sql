@@ -18,20 +18,30 @@ with daily_summary as (
     count(distinct e.user_id) as unique_users,
     count(distinct e.firm_id) as unique_firms,
     sum(e.num_docs) as total_documents,
-    avg(e.feedback_score) as overall_avg_feedback,
+    -- Handle invalid feedback scores by setting them to NULL for averaging
+    avg(case 
+      when e.feedback_score >= 1 and e.feedback_score <= 5 then e.feedback_score
+      else null
+    end) as overall_avg_feedback,
     sum(case when e.event_type = 'ASSISTANT' then 1 else 0 end) as assistant_events,
     sum(case when e.event_type = 'VAULT' then 1 else 0 end) as vault_events,
     sum(case when e.event_type = 'WORKFLOW' then 1 else 0 end) as workflow_events,
-    sum(case when e.feedback_score >= 4 then 1 else 0 end) as high_satisfaction_events,
-    sum(case when e.feedback_score <= 2 then 1 else 0 end) as low_satisfaction_events
+    sum(case when e.feedback_score >= 4 and e.feedback_score <= 5 then 1 else 0 end) as high_satisfaction_events,
+    sum(case when e.feedback_score >= 1 and e.feedback_score <= 2 then 1 else 0 end) as low_satisfaction_events
   from {{ ref('events') }} e
-  {% if is_incremental() %}
-    -- For incremental runs, process only new dates
-    where date(e.created) >= coalesce(
-      (select max(date) from {{ this }}), 
-      '1900-01-01'::date
-    )
-  {% endif %}
+  where 
+    -- Ignore records with NULL user_id or firm_id
+    e.user_id is not null
+    and e.firm_id is not null
+    -- Ignore records with future dates (created > execution date)
+    and e.created <= current_date
+    {% if is_incremental() %}
+      -- For incremental runs, process only new dates
+      and date(e.created) >= coalesce(
+        (select max(date) from {{ this }}), 
+        '1900-01-01'::date
+      )
+    {% endif %}
   group by 1
 ),
 
