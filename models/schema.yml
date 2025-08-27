@@ -2,22 +2,26 @@ version: 2
 
 models:
   - name: daily_user_engagement
-    description: "Daily user engagement metrics aggregated monthly with daily incremental updates for current month"
+    description: "Daily user engagement metrics with daily incremental updates for current month data"
     config:
-      tags: ["incremental", "daily", "monthly"]
+      tags: ["incremental", "daily"]
     columns:
       - name: user_id
         description: "Unique identifier for the user"
         tests:
           - not_null
           - unique:
-              where: "month = date_trunc('month', current_date)"
+              where: "date = current_date"
       - name: firm_id
         description: "Unique identifier for the firm"
         tests:
           - not_null
+      - name: date
+        description: "Date of the engagement metrics"
+        tests:
+          - not_null
       - name: month
-        description: "Month of the engagement metrics"
+        description: "Month of the engagement metrics (derived from date)"
         tests:
           - not_null
       - name: user_role
