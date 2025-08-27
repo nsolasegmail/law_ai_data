@@ -286,29 +286,6 @@ Daily data files may contain multiple records for the same user or firm due to:
 - Data pipeline retries or reprocessing
 - Manual data corrections or updates
 
-### **Deduplication Strategy:**
-
-#### **1. Primary Method - Timestamp-Based:**
-```sql
--- Use updated_at if available, otherwise fallback to created date
-coalesce(updated_at, created) as last_updated
-```
-
-#### **2. Fallback Method - Row Number:**
-```sql
--- Ensure only one record per user/firm per day
-row_number() over (
-  partition by id 
-  order by coalesce(updated_at, created) desc, created desc
-) as dedup_rank
-```
-
-#### **3. Filtering:**
-```sql
--- Take only the latest record for each user/firm
-where dedup_rank = 1
-```
-
 ### **Implementation in Dimensional Models:**
 
 #### **`dim_user` Deduplication:**
